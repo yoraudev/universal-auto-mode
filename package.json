@@ -1,0 +1,30 @@
+{
+  "name": "universal-auto-mode",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prompt-injection-aware auto-approval for AI coding agents",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "files": [
+    "daemon",
+    "adapters",
+    "docs",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "daemon": "node daemon/server.mjs",
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:e2e": "node e2e/run.mjs",
+    "docs:policy": "node scripts/generate-policy-doc.mjs",
+    "bench": "node bench/build-dataset.mjs && node bench/run.mjs && node bench/report.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.1",
+    "onnxruntime-node": "1.30.0"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "^2.0.26"
+  }
+}

@@ -1,0 +1,42 @@
+Universal Auto Mode License
+
+Copyright (c) 2026 yoraudev
+Original project: https://github.com/yoraudev/universal-auto-mode
+
+Permission is granted, free of charge, to any person obtaining a copy of this
+software and its documentation (the "Software"), to use, copy, modify and
+redistribute the Software, for any purpose, including commercial purposes,
+subject to the following conditions:
+
+1. Attribution. Every copy or substantial portion of the Software, in source
+   or built form, must keep this license text and the copyright notice above,
+   unchanged.
+
+2. No misrepresentation of origin. You must not claim, state or imply that you
+   wrote the Software or that it is your own original project. You must not
+   remove or obscure the credit to the original author and project from the
+   Software, its documentation, or any place where you publish or distribute
+   it.
+
+3. Republishing. If you publish the Software or a modified version of it (for
+   example in another repository, a package registry, or as part of another
+   product), you must:
+   a. state prominently, in the README or the equivalent first-seen
+      description, that it is based on Universal Auto Mode by yoraudev,
+      with a link to the original project; and
+   b. not publish it under the name "Universal Auto Mode" or a name
+      likely to be confused with it, unless it is an unmodified copy.
+
+4. Modified versions. Modified versions must be plainly marked as modified and
+   must not be presented as the original Software.
+
+Using the Software, including running it privately or inside an organization
+and building it into your own workflows, requires nothing beyond condition 1.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

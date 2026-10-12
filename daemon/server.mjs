@@ -1,0 +1,234 @@
+import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
+import { RELOAD_KEYS, SETTINGS, loadConfig, saveConfig, validate } from './config.mjs';
+import { ensureModel } from './models.mjs';
+import { decide, effectiveScore, level } from './policy.mjs';
+import { classify } from './risk.mjs';
+import { createScanner } from './scanner.mjs';
+
+const UI_ALIVE_MS = 4000;
+const REVIEW_POLL_MS = 20000;
+const NOTICES_KEPT = 50;
+
+const config = loadConfig();
+const log = (...args) => console.error(new Date().toISOString(), ...args);
+
+const sessions = new Map();
+const emptySession = () => ({ flags: [], pending: new Set(), seen: new Map(), unscanned: false, answer: undefined });
+const sessionOf = (id) => {
+  if (!sessions.has(id)) sessions.set(id, emptySession());
+  return sessions.get(id);
+};
+const scoreOf = (session) => effectiveScore(session.flags, config);
+const view = (session) => ({ score: scoreOf(session), level: level(scoreOf(session), config), flags: session.flags, pending: session.pending.size, unscanned: session.unscanned });
+
+let sequence = 0;
+const watched = new Map();
+const notices = [];
+const reviews = new Map();
+const settled = new Map();
+const uiWatching = (session) => Date.now() - (watched.get(session) ?? 0) < UI_ALIVE_MS;
+
+const settle = (flag, decision) => {
+  const review = reviews.get(flag.id);
+  if (!review) return;
+  reviews.delete(flag.id);
+  if (decision === 'continue') flag.state = 'acknowledged';
+  if (decision === 'stop') flag.state = 'withheld';
+  flag.decision = decision;
+  settled.set(flag.id, decision);
+  if (settled.size > NOTICES_KEPT) settled.delete(settled.keys().next().value);
+  log(`review ${flag.id} ${flag.source} -> ${decision}`);
+  for (const waiter of review.waiters) waiter(decision);
+  if (decision === 'unanswered') return;
+  sessions.get(review.session).answer = decision;
+  for (const other of [...reviews.values()]) if (other.session === review.session) settle(other.flag, decision);
+};
+
+let status = { state: 'loading', model: config.model };
+
+const open = async (settings) => {
+  status = { state: 'loading', model: settings.model };
+  const dir = await ensureModel(settings.model, settings.modelsDir, log, (progress) => {
+    status = { state: 'downloading', model: settings.model, ...progress };
+  });
+  status = { state: 'loading', model: settings.model };
+  const opened = await createScanner({ dir, ...settings }, log);
+  log(`model "${settings.model}" ready on ${opened.provider}`);
+  return opened;
+};
+
+const failed = (error) => {
+  const message = String(error.message).split(/\r?\n/)[0];
+  log('failed to load model:', message);
+  status = { state: 'error', message };
+};
+
+let scanner;
+let ready = open(config).then((opened) => {
+  scanner = opened;
+  status = { state: 'ready' };
+});
+ready.catch(failed);
+
+const busy = () => status.state === 'loading' || status.state === 'downloading';
+const settingsView = () => ({ ...Object.fromEntries(Object.keys(SETTINGS).map((key) => [key, config[key]])), provider: scanner?.provider, status });
+
+const timeout = (ms) => new Promise((resolve) => setTimeout(resolve, ms, undefined));
+
+const answer = (flag, score, ms) => ({ pending: false, score, level: level(score, config), ms, review: reviews.has(flag?.id) ? flag.id : undefined, decision: flag?.decision });
+
+const routes = {
+  'GET /health': () => ({ ok: true, enabled: config.enabled, ready: Boolean(scanner), model: config.model, device: scanner?.provider, status }),
+
+  'POST /scan': async ({ session: id, source = 'tool', text = '', budgetMs = config.scanBudgetMs, ui = false }) => {
+    if (!config.enabled) return { disabled: true };
+    const session = sessionOf(id);
+    const digest = createHash('sha256').update(text).digest('base64');
+    const earlier = session.seen.get(digest);
+    if (earlier) return answer(earlier.flag, earlier.score, 0);
+    let inTime = true;
+    const job = ready
+      .then(() => scanner.scan(text))
+      .then((result) => {
+        log(`scan ${id} ${source} score=${result.score.toFixed(3)} tokens=${result.tokens} ${result.ms}ms`);
+        if (result.truncated) {
+          session.unscanned = true;
+          notices.push({ seq: ++sequence, session: id, source, unscanned: 'truncated' });
+        }
+        if (result.score < config.weak) {
+          if (!result.truncated) session.seen.set(digest, { score: result.score });
+          return { result };
+        }
+        const flag = { id: ++sequence, source, score: +result.score.toFixed(3), at: Date.now(), state: 'open' };
+        session.flags.push(flag);
+        if (!result.truncated) session.seen.set(digest, { score: result.score, flag });
+        const strong = result.score >= config.strong;
+        const covered = config.detection === 'ask' && strong && session.answer !== undefined;
+        const reviewed = config.detection === 'ask' && strong && !covered && (uiWatching(id) || (ui && inTime));
+        if (covered) Object.assign(flag, { state: session.answer === 'stop' ? 'withheld' : 'acknowledged', decision: session.answer });
+        if (reviewed) reviews.set(flag.id, { flag, session: id, waiters: [], late: !inTime });
+        notices.push({ seq: flag.id, session: id, source, score: flag.score, level: level(flag.score, config), review: reviewed, covered, late: !inTime });
+        if (notices.length > NOTICES_KEPT) notices.shift();
+        return { result, flag };
+      })
+      .catch((error) => {
+        session.unscanned = true;
+        notices.push({ seq: ++sequence, session: id, source, unscanned: 'failed' });
+        log(`scan ${id} ${source} failed:`, error.message);
+      })
+      .finally(() => session.pending.delete(job));
+    session.pending.add(job);
+    const done = await Promise.race([job, timeout(budgetMs)]);
+    if (!done) {
+      inTime = false;
+      return { pending: true };
+    }
+    return answer(done.flag, done.result.score, done.result.ms);
+  },
+
+  'POST /review': async ({ id }) => {
+    const review = reviews.get(id);
+    if (!review) return { decision: settled.get(id) ?? 'unanswered' };
+    const decision = await Promise.race([new Promise((resolve) => review.waiters.push(resolve)), timeout(REVIEW_POLL_MS)]);
+    if (decision) return { decision };
+    if (uiWatching(review.session)) return { pending: true };
+    settle(review.flag, 'unanswered');
+    return { decision: 'unanswered' };
+  },
+
+  'POST /review/answer': ({ id, decision }) => {
+    const review = reviews.get(id);
+    if (!review) return { error: 'This was already answered.' };
+    if (decision !== 'continue' && decision !== 'stop') return { error: 'decision must be "continue" or "stop"' };
+    settle(review.flag, decision);
+    return { ok: true };
+  },
+
+  'POST /ui': ({ after, sessions: shown = [] }) => {
+    for (const session of shown) watched.set(session, Date.now());
+    return {
+      seq: sequence,
+      notices: after === undefined ? [] : notices.filter((notice) => notice.seq > after),
+      reviews: [...reviews.values()].filter((review) => shown.includes(review.session)).map(({ flag, session, late }) => ({ id: flag.id, session, source: flag.source, score: flag.score, late })),
+    };
+  },
+
+  'POST /turn': ({ session: id }) => {
+    const session = sessions.get(id);
+    if (session) session.answer = undefined;
+    return { ok: true };
+  },
+
+  'POST /decide': async ({ session: id, request }) => {
+    if (!config.enabled) return { disabled: true };
+    const session = sessionOf(id);
+    const assessed = classify(request);
+    if (config.detection === 'ask' && assessed.risk !== 'low' && assessed.risk !== 'critical' && session.pending.size) {
+      await Promise.race([Promise.all(session.pending), timeout(config.decideWaitMs)]);
+    }
+    const asking = config.detection === 'ask';
+    const score = asking ? scoreOf(session) : 0;
+    const decision = decide(assessed, { score, flags: session.flags }, config);
+    log(`decide ${id} ${request.kind} risk=${assessed.risk} score=${score.toFixed(3)} -> ${decision.effect}: ${JSON.stringify(request).slice(0, 300)}`);
+    return { ...decision, risk: assessed.risk, score };
+  },
+
+  'POST /session': ({ session: id }) => view(sessions.get(id) ?? emptySession()),
+
+  'GET /config': () => settingsView(),
+
+  'POST /config': (patch) => {
+    const problem = validate(patch, config);
+    if (problem) return { error: problem };
+    const apply = () => {
+      Object.assign(config, patch);
+      saveConfig(patch);
+      log(`settings changed: ${JSON.stringify(patch)}`);
+    };
+    if (!RELOAD_KEYS.some((key) => key in patch && patch[key] !== config[key]) && status.state !== 'error') {
+      apply();
+      return settingsView();
+    }
+    if (busy()) return { error: 'The classifier is still loading. Try again when it is ready.' };
+    const previous = scanner;
+    const loading = open({ ...config, ...patch }).then(async (opened) => {
+      scanner = opened;
+      apply();
+      await opened.exclusive(() => previous?.close());
+      status = { state: 'ready' };
+    });
+    loading.catch(failed);
+    if (!previous) ready = loading;
+    return settingsView();
+  },
+
+  'POST /clear': ({ session: id }) => {
+    const session = sessionOf(id);
+    for (const flag of session.flags) settle(flag, 'unanswered');
+    Object.assign(session, { flags: [], seen: new Map(), unscanned: false, answer: undefined });
+    log(`clear ${id}`);
+    return view(session);
+  },
+};
+
+const server = createServer(async (req, res) => {
+  res.setHeader('connection', 'close');
+  const route = routes[`${req.method} ${req.url}`];
+  if (!route) return res.writeHead(404).end();
+  if (req.headers.origin || !/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host ?? '')) return res.writeHead(403).end();
+  try {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const result = await route(body ? JSON.parse(body) : {});
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
+  } catch (error) {
+    res.writeHead(500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: error.message }));
+  }
+});
+
+server.on('error', (error) => {
+  log(error.code === 'EADDRINUSE' ? `port ${config.port} is already in use` : error.message);
+  process.exit(1);
+});
+server.listen(config.port, '127.0.0.1', () => log(`listening on 127.0.0.1:${config.port}`));

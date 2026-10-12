@@ -1,0 +1,8 @@
+node_modules/
+models/
+data/
+results/
+playground/
+*.tgz
+*.log
+.claude/
