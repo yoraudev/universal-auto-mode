@@ -78,7 +78,7 @@ What happens next depends on the **On detection** setting.
 
 ### `warn` (default)
 
-Nothing is asked because of a flag. The model receives the flagged output with a warning in front of it, telling it to treat the content as data, and keeps working. A notice on screen tells you what was flagged.
+Nothing is asked because of a flag. The model receives the flagged output with a warning in front of it, telling it to treat the content as data, and keeps working. A notice on screen tells you what was flagged; the **Notifications** setting turns these notices off.
 
 A short reminder follows the flagged output, so that the last thing the model reads is not the injection.
 
@@ -120,6 +120,7 @@ Settings are changed from inside the harness. In OpenCode 2, type `/auto-mode` o
 | --- | --- | --- |
 | Auto mode | `on` | The switch at the top of the menu. Off means nothing is scanned, no warnings are added and the harness's own permission rules apply unchanged. The classifier stays loaded, so turning it back on is immediate. |
 | On detection | `warn` | `warn` passes a flagged output to the model with a warning and asks you nothing. `ask` asks you whether to continue or stop and sends riskier actions later in the session to you. |
+| Notifications | `on` | Whether a notice appears on screen when an output is flagged and the model is warned. `off` hides those notices only: the model is still warned, and questions and the notice for a withheld output still appear |
 | Model | `base` | `base` (308M parameters, more accurate) or `small` (141M, about twice as fast) |
 | Device | `cpu` | Where the classifier runs: `cpu`, `gpu`, or one provider by name (`dml`, `webgpu`, `cuda`, `coreml`) |
 | Flag threshold | `0.3` | Score from which an output is flagged, and in `ask` mode from which `high` actions are sent to you |
@@ -140,6 +141,7 @@ The daemon stores these settings in `~/.config/universal-auto-mode/config.json`,
 | --- | --- | --- |
 | `enabled` | `true` | The auto mode switch |
 | `detection` | `"warn"` | `"warn"` or `"ask"`; see [How it decides](#how-it-decides) |
+| `notifications` | `"on"` | `"on"` or `"off"`; whether a notice appears when an output is flagged |
 | `model` | `"base"` | `"base"` (308M parameters, more accurate) or `"small"` (141M, about twice as fast) |
 | `device` | `"cpu"` | Where the classifier runs: `"cpu"`, `"gpu"`, or one provider by name (`"dml"`, `"webgpu"`, `"cuda"`, `"coreml"`) |
 | `port` | `7717` | Port on `127.0.0.1` |

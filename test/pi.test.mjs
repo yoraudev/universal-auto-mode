@@ -64,6 +64,13 @@ test('a flagged result reaches the agent with a warning that names auto mode', a
   assert.equal(h.calls[0][1].ui, true);
 });
 
+test('flag notices can be turned off without losing the warning', async () => {
+  const h = harness({ replies: { scan: { pending: false, score: 0.99, level: 'strong', quiet: true } } });
+  const changed = await h.handlers.tool_result(result('bash'), h.ctx);
+  assert.equal(changed.content.length, 3);
+  assert.equal(h.notes.length, 0);
+});
+
 test('clean, short, nested and edit results are left alone', async () => {
   const h = harness({ replies: { scan: { pending: false, score: 0.01, level: 'none' } } });
   assert.equal(await h.handlers.tool_result(result('bash'), h.ctx), undefined);

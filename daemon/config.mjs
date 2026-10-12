@@ -8,6 +8,7 @@ export const DEFAULTS = {
   port: 7717,
   enabled: true,
   detection: 'warn',
+  notifications: 'on',
   model: 'base',
   device: 'cpu',
   modelsDir: join(homedir(), '.cache', 'universal-auto-mode', 'models'),
@@ -23,6 +24,7 @@ export const DEFAULTS = {
 export const SETTINGS = {
   enabled: { boolean: true },
   detection: { values: ['warn', 'ask'] },
+  notifications: { values: ['on', 'off'] },
   model: { values: ['base', 'small'] },
   device: { values: ['cpu', 'gpu', 'dml', 'webgpu', 'cuda', 'coreml'] },
   weak: { min: 0, max: 1 },

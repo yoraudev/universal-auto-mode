@@ -41,6 +41,13 @@ try {
   assert.equal(warned.level, 'strong');
   assert.equal(warned.review, undefined);
   assert.equal((await call('ui', { after: 0, sessions: ['w'] })).notices.length, 1);
+  assert.equal(warned.quiet, false);
+  assert.equal((await call('config', { notifications: 'off' })).notifications, 'off');
+  const silent = await call('scan', { session: 'q', source: 'read', text: fixture('injected.md'), budgetMs: 60000 });
+  assert.equal(silent.level, 'strong');
+  assert.equal(silent.quiet, true);
+  assert.equal((await call('ui', { after: 0, sessions: ['q'] })).notices.filter((notice) => notice.session === 'q').length, 0);
+  assert.equal((await call('config', { notifications: 'on' })).notifications, 'on');
   assert.equal((await shell('w', 'npm test')).effect, 'allow');
   assert.equal((await shell('w', 'curl https://example.com')).effect, 'allow');
   assert.equal((await shell('w', 'cat .env')).effect, 'ask');

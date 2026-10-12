@@ -74,6 +74,8 @@ An answer covers the rest of the turn. It settles every other open review of tha
 
 An adapter that asks the user itself sends `ui: true` with `/scan` instead of announcing sessions. A review is then opened for a strong flag whenever the scan finished within its budget, and the adapter posts the answer to `/review/answer` without calling `/review`.
 
+With the `notifications` setting `off`, the daemon records no notice for a flag and adds `quiet: true` to the answer of `/scan`, which tells an adapter that shows its own notices to skip the one for a warned flag. Reviews, the notice for a withheld output and the notices about outputs that could not be scanned are not affected.
+
 `/ui` also returns notices, one per flag, so an interface can tell the user about flags that did not lead to a review. A later scan of the same text in the same session returns the earlier decision instead of asking again.
 
 `/scan` returns as soon as the scan finishes or `budgetMs` has passed, whichever comes first. The default budget is a minute, so a tool result normally waits for its scan. A scan that outlives the budget keeps running and still counts.

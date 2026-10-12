@@ -30,6 +30,15 @@ export const CHOICES = {
       { value: "ask", title: "ask", description: "You are asked to continue or stop, and riskier actions go to you" },
     ],
   },
+  notifications: {
+    title: "Notifications",
+    category: "Detection",
+    description: "Whether you get a notice when an output is flagged and the agent is warned",
+    options: [
+      { value: "on", title: "on", description: "Default. A notice names each flagged output" },
+      { value: "off", title: "off", description: "No notice for flags. The agent is still warned, and questions still appear" },
+    ],
+  },
 }
 
 export const NUMBERS = {

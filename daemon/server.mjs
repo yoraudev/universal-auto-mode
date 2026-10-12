@@ -76,7 +76,7 @@ const settingsView = () => ({ ...Object.fromEntries(Object.keys(SETTINGS).map((k
 
 const timeout = (ms) => new Promise((resolve) => setTimeout(resolve, ms, undefined));
 
-const answer = (flag, score, ms) => ({ pending: false, score, level: level(score, config), ms, review: reviews.has(flag?.id) ? flag.id : undefined, decision: flag?.decision });
+const answer = (flag, score, ms) => ({ pending: false, score, level: level(score, config), ms, review: reviews.has(flag?.id) ? flag.id : undefined, decision: flag?.decision, quiet: config.notifications === 'off' });
 
 const routes = {
   'GET /health': () => ({ ok: true, enabled: config.enabled, ready: Boolean(scanner), model: config.model, device: scanner?.provider, status }),
@@ -108,7 +108,7 @@ const routes = {
         const reviewed = config.detection === 'ask' && strong && !covered && (uiWatching(id) || (ui && inTime));
         if (covered) Object.assign(flag, { state: session.answer === 'stop' ? 'withheld' : 'acknowledged', decision: session.answer });
         if (reviewed) reviews.set(flag.id, { flag, session: id, waiters: [], late: !inTime });
-        notices.push({ seq: flag.id, session: id, source, score: flag.score, level: level(flag.score, config), review: reviewed, covered, late: !inTime });
+        if (config.notifications === 'on') notices.push({ seq: flag.id, session: id, source, score: flag.score, level: level(flag.score, config), review: reviewed, covered, late: !inTime });
         if (notices.length > NOTICES_KEPT) notices.shift();
         return { result, flag };
       })

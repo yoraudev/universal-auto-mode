@@ -82,7 +82,7 @@ export function createExtension({ call, callOrStart, start }) {
         ctx.abort()
         return { content: [note(withheldNote(scan.score))], isError: true }
       }
-      if (asked || scan.decision === undefined) notify(ctx, `${flagged} The agent was warned and keeps working.`, "warning")
+      if (!scan.quiet && (asked || scan.decision === undefined)) notify(ctx, `${flagged} The agent was warned and keeps working.`, "warning")
       return { content: [note(warning(scan.score)), ...event.content, note(reminder)], structuredContent: event.structuredContent }
     })
 
