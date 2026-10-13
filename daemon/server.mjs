@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { appendFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { RELOAD_KEYS, SETTINGS, TRUSTED_KEPT, loadConfig, loadTrusted, saveConfig, saveTrusted, validate } from './config.mjs';
 import { ensureModel } from './models.mjs';
@@ -13,7 +14,15 @@ const SESSIONS_KEPT = 500;
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 const IDLE_CHECK_MS = 5000;
 
-const log = (...args) => console.error(new Date().toISOString(), ...args);
+const log = (...args) => {
+  const line = `${new Date().toISOString()} ${args.join(' ')}\n`;
+  if (process.env.UAM_LOG) appendFileSync(process.env.UAM_LOG, line);
+  else process.stderr.write(line);
+};
+process.on('uncaughtException', (error) => {
+  log(error.stack ?? error.message);
+  process.exit(1);
+});
 const config = loadConfig(process.env, log);
 const trusted = loadTrusted(process.env, log);
 

@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { createClient, rotate } from '../adapters/shared/client.js';
+import { breakawayLine, createClient, rotate } from '../adapters/shared/client.js';
 import { DEFAULTS, loadConfig, loadTrusted, saveConfig, saveTrusted, trustPath } from '../daemon/config.mjs';
 import { MODELS, download } from '../daemon/models.mjs';
 import { decide } from '../daemon/policy.mjs';
@@ -166,6 +166,11 @@ test('after a start that did not work, later calls do not wait again', async () 
   const started = Date.now();
   await client.callOrStart('health');
   assert.ok(Date.now() - started < 250);
+});
+
+test('the command that starts the daemon outside the caller carries only the auto mode settings', () => {
+  const line = breakawayLine({ PATH: 'C:\\bin', UAM_PORT: '7717', UAM_LOG: 'C:\\Users\\u\\.cache\\universal-auto-mode\\daemon.log', UAM_LAUNCH: 'x', UAM_MODEL: undefined }, 'C:\\Program Files\\nodejs\\node.exe', 'E:\\uam\\daemon\\server.mjs');
+  assert.equal(line, 'cmd.exe /d /s /c "set "UAM_PORT=7717"&& set "UAM_LOG=C:\\Users\\u\\.cache\\universal-auto-mode\\daemon.log"&& "C:\\Program Files\\nodejs\\node.exe" "E:\\uam\\daemon\\server.mjs""');
 });
 
 test('a log file is set aside once it has grown past the limit', () => {

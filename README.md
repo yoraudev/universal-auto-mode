@@ -10,6 +10,7 @@ It runs as a local daemon plus a small adapter per harness.
 | --- | --- | --- |
 | OpenCode 2 | `adapters/opencode2` | [OpenCode 2](#opencode-2) |
 | Pi | `adapters/pi` | [Pi](#pi) |
+| Codex CLI | `adapters/codex` | [Codex CLI](#codex-cli) |
 
 > [!WARNING]
 > **This lowers the risk of letting an agent act on its own. It does not remove it.** Read this before relying on it.
@@ -69,6 +70,18 @@ pi install /full/path/to/universal-auto-mode/adapters/pi/index.js
 
 To try it for one run without installing, start Pi with `pi -e /full/path/to/universal-auto-mode/adapters/pi/index.js`. The footer shows whether auto mode is on and in which mode, and `/auto-mode` opens the settings.
 
+### Codex CLI
+
+The adapter is a set of [hooks](https://developers.openai.com/codex/hooks). Add them to `~/.codex/hooks.json`:
+
+```bash
+node /full/path/to/universal-auto-mode/adapters/codex/install.mjs
+```
+
+Then open Codex, run `/hooks` and trust them; Codex does not run a hook you have not reviewed, and says nothing when it skips one. The script keeps hooks you already have, can be run again after moving the project, and removes its entries with `--remove`.
+
+Codex has no place for a plugin's settings or questions, so both go through the conversation. A message that starts with `auto-mode` is answered by the adapter and does not reach the agent: `auto-mode status`, `auto-mode set detection ask`, `auto-mode clear`, `auto-mode trust`, `auto-mode on`, `auto-mode off`. `auto-mode` alone lists them. When auto mode wants an action confirmed, it blocks the call and tells you; `auto-mode allow` as your next message lets the agent make exactly that call again during that turn. Any other message drops the request.
+
 Every adapter starts the daemon when it is not running. The classifier is downloaded on first start: 641 MB for `base`, 268 MB for `small`. Each file is fetched from a fixed revision of the model's repository and kept only if its SHA-256 checksum matches the one in `daemon/models.mjs`.
 
 ## How it decides
@@ -117,7 +130,7 @@ In both modes a `deny` from the harness stays a `deny`. Every other decision of 
 
 ## Settings
 
-Settings are changed from inside the harness. In OpenCode 2, type `/auto-mode` or pick **Auto mode settings** from the command palette (`ctrl+p`). In Pi, type `/auto-mode`; it shows the same settings as a list, and the footer shows the loading progress. A change takes effect without restarting anything and is saved for the next start. Switching the model or the device loads the new classifier in the background while the old one keeps working. A progress view shows what is happening during that time, with the download percentage when the model has to be fetched first, and a notice appears when the classifier is ready. Pressing esc in the progress view goes to the settings, where a status line leads back to it. If loading fails, the previous classifier stays in use and the menu shows the error.
+Settings are changed from inside the harness. In OpenCode 2, type `/auto-mode` or pick **Auto mode settings** from the command palette (`ctrl+p`). In Pi, type `/auto-mode`; it shows the same settings as a list, and the footer shows the loading progress. In Codex, send `auto-mode status` to see them and `auto-mode set <key> <value>` to change one, with the keys of the [config file](#config-file). A change takes effect without restarting anything and is saved for the next start. Switching the model or the device loads the new classifier in the background while the old one keeps working. A progress view shows what is happening during that time, with the download percentage when the model has to be fetched first, and a notice appears when the classifier is ready. Pressing esc in the progress view goes to the settings, where a status line leads back to it. If loading fails, the previous classifier stays in use and the menu shows the error.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -161,7 +174,7 @@ The daemon stores these settings in `~/.config/universal-auto-mode/config.json`,
 | `maxChars` | `200000` | Longest tool output scanned in full |
 | `unloadMinutes` | `30` | Minutes without a scan before the classifier is unloaded; `0` for never |
 
-`port` and `modelsDir` can only be set in the file. The environment variables `UAM_MODEL`, `UAM_DEVICE`, `UAM_PORT` and `UAM_MODELS_DIR` override the file when the daemon starts, and `UAM_CONFIG` points it at a different file.
+`port` and `modelsDir` can only be set in the file. The environment variables `UAM_MODEL`, `UAM_DEVICE`, `UAM_PORT` and `UAM_MODELS_DIR` override the file when the daemon starts, and `UAM_CONFIG` points it at a different file. With `UAM_LOG` set to a file, the daemon appends its log there instead of writing it to its error output.
 
 The OpenCode 2 adapter takes `port`, `modelsDir`, `node` (path to the Node.js binary) and `debug` as options. To set them, write the plugin entry as an object instead of a path:
 
@@ -171,7 +184,7 @@ The OpenCode 2 adapter takes `port`, `modelsDir`, `node` (path to the Node.js bi
 }
 ```
 
-`modelsDir` applies only when the adapter starts the daemon itself. The Pi adapter reads the port from `UAM_PORT`.
+`modelsDir` applies only when the adapter starts the daemon itself. The Pi and Codex adapters read the port from `UAM_PORT`.
 
 ### GPU
 
@@ -222,6 +235,10 @@ What this showed:
 - In `opencode run` there is nobody to ask, so a request that would be sent to you is rejected.
 - Pi has no permission prompts of its own, so there every question comes from the adapter: before a call that auto mode wants confirmed, and in `ask` mode about a strongly flagged output. In `pi -p` and the JSON mode there is nobody to ask: a call that needs confirmation is blocked, and a flagged output goes to the model with the warning.
 - In Pi, tool calls made by a script inside another tool (codemode) are rated one by one, but only the result the model receives is scanned.
+- In Codex, when Codex itself asks you to approve a command, auto mode answers for you if the action is one it allows, and leaves Codex's prompt in place otherwise. An action auto mode wants confirmed is blocked before it runs, whether or not Codex would have asked, and waits for `auto-mode allow`. In `codex exec` nobody can send that message, so such an action stays blocked.
+- In Codex a hook cannot change a tool's output, so the warning for a flagged output is added after it as context for the agent. In `ask` mode a strongly flagged output is withheld and the turn is stopped; `auto-mode allow` lets the agent read it again with the warning, and any other message keeps it withheld.
+- Codex hooks see shell commands, patches and MCP tools. They do not see Codex's hosted tools such as web search, so what those return is not scanned. Each hook starts a Node.js process, which adds a fraction of a second to every tool call.
+- The Codex adapter was tried on Windows with Codex CLI 0.161. On Linux and macOS it has not been run.
 - A scan takes about 1.5 seconds per 1,400 tokens with `base` on a six-core desktop CPU, and about half that on a Radeon RX 580 once the GPU has seen that input length. The tool result is held back until its scan is done, so a long page read through a browser tool can add many seconds to that step. A flagged output takes about a second longer with `base` on that CPU, because the daemon then looks for the passage to quote. A scan that outlasts the scan budget finishes in the background; in `ask` mode you are still asked if it is flagged, with a note that the model already has the output.
 - Tool output read while auto mode is off is never scanned. If you turn it on in the middle of a session, what the model read before that does not count toward the session score.
 - Until the classifier has been downloaded and loaded, tool output cannot be scanned and nothing is flagged or asked, unless **Unscanned output** is set to `ask`.

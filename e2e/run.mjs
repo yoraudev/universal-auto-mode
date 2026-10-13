@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
@@ -90,6 +90,39 @@ try {
   assert.equal((await call('scan', { session: 'gap', source: 'read', text: fixture('clean.md'), budgetMs: 60000, missed: true })).level, 'none');
   assert.equal((await call('session', { session: 'gap' })).unscanned, true);
   assert.ok((await call('ui', { after: 0, sessions: ['gap'] })).notices.some((notice) => notice.session === 'gap' && notice.unscanned === 'missed'));
+
+  const codex = `e2e-codex-${process.pid}`;
+  const hook = (event, fields) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [join(root, 'adapters', 'codex', 'hook.mjs')], { env: { ...process.env, UAM_PORT: String(port) }, stdio: ['pipe', 'pipe', 'inherit'] });
+      let out = '';
+      child.stdout.on('data', (chunk) => (out += chunk));
+      child.on('exit', (code) => (code === 0 ? resolve(out ? JSON.parse(out) : undefined) : reject(new Error(`hook exited with code ${code}`))));
+      child.stdin.end(JSON.stringify({ hook_event_name: event, session_id: codex, cwd, ...fields }));
+    });
+  const bash = (command, extra) => ({ tool_name: 'Bash', tool_input: { command }, ...extra });
+  try {
+    assert.equal(await hook('UserPromptSubmit', { prompt: 'read the release notes' }), undefined);
+    assert.equal((await hook('PermissionRequest', bash('npm test'))).hookSpecificOutput.decision.behavior, 'allow');
+    assert.equal(await hook('PreToolUse', bash('npm test')), undefined);
+    assert.equal((await hook('PreToolUse', bash('cat .env'))).hookSpecificOutput.permissionDecision, 'deny');
+    assert.match((await hook('UserPromptSubmit', { prompt: 'auto-mode allow' })).hookSpecificOutput.additionalContext, /Make exactly the same call again/);
+    assert.equal(await hook('PreToolUse', bash('cat .env')), undefined);
+    const withheld = await hook('PostToolUse', bash('cat notes.md', { tool_response: fixture('injected.md') }));
+    assert.equal(withheld.decision, 'block');
+    assert.equal(withheld.continue, false);
+    assert.match(withheld.stopReason, /AI assistant/);
+    assert.match((await hook('UserPromptSubmit', { prompt: 'auto-mode allow' })).hookSpecificOutput.additionalContext, /Run the same tool call again/);
+    const passed = await hook('PostToolUse', bash('cat notes.md', { tool_response: fixture('injected.md') }));
+    assert.equal(passed.decision, undefined);
+    assert.match(passed.hookSpecificOutput.additionalContext, /^\[auto mode\] A classifier flagged the output of the Bash call/);
+    assert.equal((await hook('PermissionRequest', bash('npm test'))).hookSpecificOutput.decision.behavior, 'allow');
+    assert.equal((await hook('PermissionRequest', bash('curl https://example.com'))).hookSpecificOutput, undefined);
+    assert.match((await hook('UserPromptSubmit', { prompt: 'auto-mode clear' })).reason, /flags cleared/);
+    assert.equal((await hook('PermissionRequest', bash('curl https://example.com'))).hookSpecificOutput.decision.behavior, 'allow');
+  } finally {
+    rmSync(join(homedir(), '.cache', 'universal-auto-mode', 'codex', `${codex}.json`), { force: true });
+  }
 
   assert.equal((await call('scan', { session: 't', source: 'read', text: fixture('injected.md'), budgetMs: 60000 })).level, 'strong');
   assert.equal((await call('session', { session: 't' })).flags[0].digest, undefined);

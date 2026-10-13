@@ -10,6 +10,7 @@
 - **Daemon ↔ adapter transport:** HTTP with JSON bodies on `127.0.0.1`
 - **OpenCode adapter:** `@opencode/plugin` 2.x (Promise plugin API for the server part, terminal UI plugin API with Solid JSX for the settings command)
 - **Pi adapter:** a Pi extension in plain JavaScript (`tool_call` and `tool_result` events, `/auto-mode` command), loaded by Pi without a build step
+- **Codex CLI adapter:** command hooks in plain JavaScript (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest` and `PostToolUse`), one Node.js process per event, registered in `~/.codex/hooks.json` by an install script
 - **Tests:** `node:test` (unit), a scripted run against a real daemon (end-to-end)
 - **CI / releases:** GitHub Actions
 
