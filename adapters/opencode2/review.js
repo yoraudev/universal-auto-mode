@@ -2,6 +2,11 @@ import { quoted } from "../shared/scan.js"
 
 const TITLE = "Auto mode"
 const NOTICE_MS = 12000
+const DOWN_AFTER = 5
+const UNSCANNED = {
+  truncated: (source) => `The output of ${source} was too long to scan in full. Only its beginning and end were scanned.`,
+  missed: () => "Earlier tool output in this session was not scanned because the daemon was not running.",
+}
 
 const describe = (item) => `${item.source} (score ${item.score.toFixed(2)})`
 const ASK_SIZE = { size: "xlarge" }
@@ -17,6 +22,7 @@ export function createReviewer({ dialog, toast, call, sessions, interrupt }) {
   const handled = new Set()
   let after
   let asking = false
+  let failures = 0
 
   const ask = async (reviews) => {
     asking = true
@@ -42,12 +48,16 @@ export function createReviewer({ dialog, toast, call, sessions, interrupt }) {
 
   return async function poll() {
     const state = await call("ui", { after, sessions: sessions() }).catch(() => undefined)
-    if (!state) return
+    if (!state) {
+      if (after !== undefined && ++failures === DOWN_AFTER) toast.show({ variant: "warning", title: TITLE, message: "The daemon is not answering. Tool output is not scanned until it is back.", duration: NOTICE_MS })
+      return
+    }
+    failures = 0
     after = state.seq
     for (const notice of state.notices) {
       if (notice.review || notice.covered) continue
       if (notice.unscanned) {
-        toast.show({ variant: "warning", title: TITLE, message: notice.unscanned === "truncated" ? `The output of ${notice.source} was too long to scan in full. Only its beginning and end were scanned.` : `The output of ${notice.source} could not be scanned.`, duration: NOTICE_MS, sessionID: notice.session })
+        toast.show({ variant: "warning", title: TITLE, message: UNSCANNED[notice.unscanned]?.(notice.source) ?? `The output of ${notice.source} could not be scanned.`, duration: NOTICE_MS, sessionID: notice.session })
         continue
       }
       toast.show({

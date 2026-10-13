@@ -8,7 +8,7 @@ import { DEFAULTS } from '../daemon/config.mjs';
 const cwd = '/work';
 const long = 'x'.repeat(200);
 
-function harness({ replies = {}, selects = [], inputs = [], hasUI = true } = {}) {
+function harness({ replies = {}, selects = [], inputs = [], hasUI = true, offline } = {}) {
   const calls = [];
   const notes = [];
   const asked = [];
@@ -33,7 +33,9 @@ function harness({ replies = {}, selects = [], inputs = [], hasUI = true } = {})
   };
   const ctx = { ui, hasUI, cwd, sessionManager: { getSessionId: () => 's1' }, abort: () => aborted++ };
   const pi = { on: (name, handler) => (handlers[name] = handler), registerCommand: (name, command) => (commands[name] = command) };
-  createExtension({ call, callOrStart: call, start: () => calls.push(['start']) })(pi);
+  const scan = (body) => call('scan', body);
+  const decide = async (session, request) => (await call('decide', { session, request })) ?? offline;
+  createExtension({ call, callOrStart: call, start: () => calls.push(['start']), scan, decide })(pi);
   return { calls, notes, asked, statuses, handlers, commands, ctx, ui, aborted: () => aborted };
 }
 
@@ -100,6 +102,28 @@ test('nothing happens while auto mode is off or the daemon is away', async () =>
   const away = harness();
   assert.equal(await away.handlers.tool_result(result('bash'), away.ctx), undefined);
   assert.equal(await away.handlers.tool_call({ toolName: 'bash', input: { command: 'cat .env' } }, away.ctx), undefined);
+});
+
+test('a daemon that stops answering is reported once, and again when it is back', async () => {
+  const replies = {};
+  const h = harness({ replies });
+  await h.handlers.tool_result(result('bash'), h.ctx);
+  await h.handlers.tool_result(result('read'), h.ctx);
+  assert.equal(h.notes.length, 1);
+  assert.match(h.notes[0][1], /daemon is not answering/);
+  replies.scan = { pending: false, score: 0.01, level: 'none' };
+  await h.handlers.tool_result(result('bash'), h.ctx);
+  await h.handlers.tool_result(result('read'), h.ctx);
+  assert.equal(h.notes.length, 2);
+  assert.match(h.notes[1][1], /daemon is back/);
+});
+
+test('a decision made without the daemon is asked about like any other', async () => {
+  const offline = { effect: 'ask', reason: 'uses a network tool; the auto mode daemon is not running', risk: 'high', offline: true };
+  const h = harness({ offline, selects: [undefined] });
+  const blocked = await h.handlers.tool_call({ toolName: 'bash', input: { command: 'curl https://example.com' } }, h.ctx);
+  assert.equal(blocked.block, true);
+  assert.match(h.asked[0][0], /daemon is not running/);
 });
 
 test('ask mode asks once for results that arrive together', async () => {

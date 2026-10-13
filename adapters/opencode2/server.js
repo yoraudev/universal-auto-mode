@@ -29,9 +29,9 @@ export default Plugin.define({
   async setup(ctx) {
     const cwd = ctx.location.directory
     const debug = Boolean(ctx.options.debug)
-    const { callOrStart } = createClient(ctx.options)
+    const { callOrStart, scan: scanOutput, decide } = createClient(ctx.options)
 
-    await callOrStart("health")
+    await callOrStart("health", undefined, { wait: false })
 
     const trustKey = `trusted:${cwd}`
     const trusted = new Set((await ctx.storage.get(trustKey)) ?? [])
@@ -58,7 +58,7 @@ export default Plugin.define({
       if (event.status !== "completed" || SKIP_SCAN.has(event.tool)) return
       const text = textOf(event.result)
       if (text.length < MIN_SCAN_CHARS) return
-      const scan = await callOrStart("scan", { session: event.sessionID, source: event.tool, text })
+      const scan = await scanOutput({ session: event.sessionID, source: event.tool, text })
       if (!scan || scan.disabled || scan.pending || scan.level === "none") return
       let decision = scan.decision
       while (scan.review !== undefined && decision === undefined) {
@@ -78,7 +78,7 @@ export default Plugin.define({
       if (evaluation.effect === "deny") return
       const request = toRequest(evaluation, cwd)
       if (request.kind === "other" && trusted.has(evaluation.action)) return
-      const decision = await callOrStart("decide", { session: evaluation.sessionID, request })
+      const decision = await decide(evaluation.sessionID, request)
       if (!decision || decision.disabled) return
       evaluation.effect = decision.effect
       if (decision.effect === "ask") evaluation.message = REASON_PREFIX + decision.reason

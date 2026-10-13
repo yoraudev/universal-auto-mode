@@ -20,10 +20,11 @@ function styled(theme, config, progress) {
   return theme.fg("success", "● ") + theme.fg("dim", "auto mode: ") + theme.fg("muted", config.detection)
 }
 
-export function createExtension({ call, callOrStart, start }) {
+export function createExtension({ call, callOrStart, start, scan: scanOutput, decide }) {
   return function universalAutoMode(pi) {
     const answers = new Map()
     let asking = Promise.resolve()
+    let down = false
 
     const sessionOf = (ctx) => ctx.sessionManager.getSessionId()
     const notify = (ctx, message, type) => {
@@ -57,7 +58,7 @@ export function createExtension({ call, callOrStart, start }) {
     })
 
     pi.on("tool_call", async (event, ctx) => {
-      const decision = await callOrStart("decide", { session: sessionOf(ctx), request: toRequest(event, ctx.cwd) })
+      const decision = await decide(sessionOf(ctx), toRequest(event, ctx.cwd))
       if (!decision || decision.disabled || decision.effect !== "ask") return
       const why = `universal-auto-mode: ${decision.reason}`
       if (!ctx.hasUI) return { block: true, reason: `This call needs confirmation and nobody is present to give it (${why}).` }
@@ -70,7 +71,10 @@ export function createExtension({ call, callOrStart, start }) {
       const text = textOf(event.content)
       if (text.length < MIN_SCAN_CHARS) return
       const session = sessionOf(ctx)
-      const scan = await callOrStart("scan", { session, source: event.toolName, text, ui: ctx.hasUI })
+      const scan = await scanOutput({ session, source: event.toolName, text, ui: ctx.hasUI })
+      if (!scan && !down) notify(ctx, "Auto mode: the daemon is not answering. Tool output is not scanned until it is back.", "warning")
+      if (scan && down && !scan.disabled) notify(ctx, "Auto mode: the daemon is back. Earlier tool output in this session was not scanned.", "warning")
+      down = !scan
       if (!scan || scan.disabled) return
       if (scan.pending) return notify(ctx, `Auto mode is still scanning the output of ${event.toolName}. It reached the agent unscanned.`, "warning")
       if (scan.truncated) notify(ctx, `Auto mode: the output of ${event.toolName} was too long to scan in full. Only its beginning and end were scanned.`, "warning")

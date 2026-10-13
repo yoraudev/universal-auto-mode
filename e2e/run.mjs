@@ -87,6 +87,10 @@ try {
   assert.equal((await shell('blind', 'npm test')).effect, 'allow');
   await call('config', { unscanned: 'allow', decideWaitMs: 30000 });
 
+  assert.equal((await call('scan', { session: 'gap', source: 'read', text: fixture('clean.md'), budgetMs: 60000, missed: true })).level, 'none');
+  assert.equal((await call('session', { session: 'gap' })).unscanned, true);
+  assert.ok((await call('ui', { after: 0, sessions: ['gap'] })).notices.some((notice) => notice.session === 'gap' && notice.unscanned === 'missed'));
+
   assert.equal((await call('scan', { session: 't', source: 'read', text: fixture('injected.md'), budgetMs: 60000 })).level, 'strong');
   assert.equal((await call('session', { session: 't' })).flags[0].digest, undefined);
   const trust = await call('trust', { session: 't' });

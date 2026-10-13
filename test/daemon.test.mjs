@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { rotate } from '../adapters/shared/client.js';
+import { createClient, rotate } from '../adapters/shared/client.js';
 import { DEFAULTS, loadConfig, loadTrusted, saveConfig, saveTrusted, trustPath } from '../daemon/config.mjs';
 import { MODELS, download } from '../daemon/models.mjs';
 import { decide } from '../daemon/policy.mjs';
@@ -86,6 +87,85 @@ test('a session with unscanned output keeps high-risk actions with the user when
   assert.match(decide({ risk: 'high', reason: 'uses a network tool' }, session(true), thresholds).reason, /could not be scanned/);
   assert.equal(decide({ risk: 'high' }, session(false), thresholds).effect, 'allow');
   assert.equal(decide({ risk: 'medium' }, session(true), thresholds).effect, 'allow');
+});
+
+const freePort = () =>
+  new Promise((resolve) => {
+    const probe = createServer().listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+
+test('a call that finds no daemon starts it, waits for it and is then delivered', async () => {
+  const port = await freePort();
+  const bodies = [];
+  const daemon = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    bodies.push([req.url, JSON.parse(body)]);
+    res.setHeader('connection', 'close');
+    res.end(JSON.stringify({ pending: false, score: 0.01, level: 'none' }));
+  });
+  let launches = 0;
+  const client = createClient({ port, waitMs: 5000, launch: () => (launches++, setTimeout(() => daemon.listen(port, '127.0.0.1'), 300)) });
+  try {
+    assert.equal(await client.callOrStart('health', undefined, { wait: false }), undefined);
+    assert.equal((await client.scan({ session: 's1', source: 'read', text: 'x' })).level, 'none');
+    assert.equal(launches, 1);
+    assert.deepEqual(bodies, [['/scan', { session: 's1', source: 'read', text: 'x' }]]);
+  } finally {
+    daemon.close();
+  }
+});
+
+test('output missed while the daemon was away is reported with the next scan', async () => {
+  const port = await freePort();
+  const bodies = [];
+  const daemon = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    bodies.push(JSON.parse(body));
+    res.setHeader('connection', 'close');
+    res.end(JSON.stringify({ pending: false, score: 0.01, level: 'none' }));
+  });
+  const client = createClient({ port, waitMs: 20, launch: () => {} });
+  assert.equal(await client.scan({ session: 's1', source: 'read', text: 'first' }), undefined);
+  await new Promise((resolve) => daemon.listen(port, '127.0.0.1', resolve));
+  try {
+    await client.scan({ session: 's2', source: 'read', text: 'other' });
+    await client.scan({ session: 's1', source: 'read', text: 'second' });
+    await client.scan({ session: 's1', source: 'read', text: 'third' });
+    assert.deepEqual(bodies.map((body) => body.missed), [undefined, true, undefined]);
+  } finally {
+    daemon.close();
+  }
+});
+
+test('without a daemon, risky actions are asked about only when unscanned output is set to ask', async () => {
+  const port = await freePort();
+  const cwd = process.cwd();
+  const strict = createClient({ port, waitMs: 20, launch: () => {}, env: envWith(JSON.stringify({ detection: 'ask', unscanned: 'ask' })) });
+  const network = await strict.decide('s1', { kind: 'shell', command: 'curl https://example.com', cwd });
+  assert.equal(network.effect, 'ask');
+  assert.equal(network.risk, 'high');
+  assert.match(network.reason, /uses a network tool; the auto mode daemon is not running/);
+  assert.equal((await strict.decide('s1', { kind: 'shell', command: 'cat .env', cwd })).effect, 'ask');
+  assert.equal(await strict.decide('s1', { kind: 'shell', command: 'npm test', cwd }), undefined);
+  assert.equal(await strict.decide('s1', { kind: 'read', paths: ['src/a.js'], cwd }), undefined);
+  for (const settings of [{}, { detection: 'ask' }, { unscanned: 'ask' }, { detection: 'ask', unscanned: 'ask', enabled: false }]) {
+    const lenient = createClient({ port, waitMs: 20, launch: () => {}, env: envWith(JSON.stringify(settings)) });
+    assert.equal(await lenient.decide('s1', { kind: 'shell', command: 'curl https://example.com', cwd }), undefined);
+  }
+});
+
+test('after a start that did not work, later calls do not wait again', async () => {
+  const port = await freePort();
+  const client = createClient({ port, waitMs: 300, launch: () => {} });
+  await client.callOrStart('health');
+  const started = Date.now();
+  await client.callOrStart('health');
+  assert.ok(Date.now() - started < 250);
 });
 
 test('a log file is set aside once it has grown past the limit', () => {

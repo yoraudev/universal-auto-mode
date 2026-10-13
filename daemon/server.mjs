@@ -116,9 +116,14 @@ const answer = (flag, score, ms) => ({ pending: false, score, level: level(score
 const routes = {
   'GET /health': () => ({ ok: true, enabled: config.enabled, ready: Boolean(scanner) || status.state === 'idle', model: config.model, device: provider, status }),
 
-  'POST /scan': async ({ session: id, source = 'tool', text = '', budgetMs = config.scanBudgetMs, ui = false }) => {
+  'POST /scan': async ({ session: id, source = 'tool', text = '', budgetMs = config.scanBudgetMs, ui = false, missed = false }) => {
     if (!config.enabled) return { disabled: true };
     const session = sessionOf(id);
+    if (missed) {
+      session.unscanned = true;
+      notices.push({ seq: ++sequence, session: id, source, unscanned: 'missed' });
+      log(`scan ${id} earlier output was not scanned`);
+    }
     const digest = createHash('sha256').update(text).digest('base64');
     if (trusted.has(digest)) return { pending: false, score: 0, level: 'none', ms: 0, trusted: true, quiet: config.notifications === 'off' };
     const earlier = session.seen.get(digest);
