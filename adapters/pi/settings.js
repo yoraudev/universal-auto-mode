@@ -44,12 +44,14 @@ export async function openSettings({ ui, call, start, session, onChange = () => 
     const state = session ? await call("session", { session }).catch(() => undefined) : undefined
     const entries = [["enabled", config.enabled ? "Auto mode: on (select to turn off)" : "Auto mode: off (select to turn on)"]]
     if (config.status && config.status.state !== "ready") entries.push(["status", `${statusLine(config.status)} (select to refresh)`])
-    if (state?.flags.length) entries.push(["clear", `Clear flags of this session (score ${state.score.toFixed(2)})`])
+    if (state?.flags.length || state?.unscanned) entries.push(["clear", `Clear flags of this session (score ${state.score.toFixed(2)})`])
+    if (state?.flags.length) entries.push(["trust", "Trust flagged content (clears the flags and never flags this exact content again)"])
     for (const [key, item] of Object.entries(CHOICES)) {
       const running = key === "device" && config.provider && config.provider !== config.device ? ` (running on ${config.provider})` : ""
       entries.push([key, `${item.title}: ${config[key]}${running}`])
     }
     for (const [key, item] of Object.entries(NUMBERS)) entries.push([key, `${item.title}: ${config[key]}`])
+    if (config.trusted) entries.push(["forget", `Forget trusted content (${config.trusted})`])
 
     const label = await ui.select("Auto mode", entries.map(([, text]) => text))
     const key = entries.find(([, text]) => text === label)?.[0]
@@ -59,6 +61,19 @@ export async function openSettings({ ui, call, start, session, onChange = () => 
     if (key === "clear") {
       await call("clear", { session }).catch(() => undefined)
       ui.notify("Auto mode: flags cleared for this session.", "info")
+      continue
+    }
+
+    if (key === "trust") {
+      const result = await call("trust", { session }).catch(() => undefined)
+      if (result) ui.notify(`Auto mode: flags cleared. ${result.added} flagged ${result.added === 1 ? "output is" : "outputs are"} trusted from now on.`, "info")
+      else ui.notify("Auto mode: the daemon did not answer.", "error")
+      continue
+    }
+
+    if (key === "forget") {
+      await call("trust/reset", {}).catch(() => undefined)
+      ui.notify("Auto mode: trusted content forgotten.", "info")
       continue
     }
 

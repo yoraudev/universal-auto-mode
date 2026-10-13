@@ -31,6 +31,8 @@ function harness({ selects = [], prompts = [], config = { ...DEFAULTS }, session
     }
     if (path === 'session') return session;
     if (path === 'clear') return { score: 0, flags: [] };
+    if (path === 'trust') return { score: 0, flags: [], added: session.flags.length, trusted: session.flags.length };
+    if (path === 'trust/reset') return { trusted: 0 };
     throw new Error(path);
   };
   return { dialog, toast: { show: (toast) => toasts.push(toast) }, call, calls, toasts, seen, config, retryMs: 5 };
@@ -67,6 +69,29 @@ test('clearing flags is offered only inside a flagged session', async () => {
   const flagged = harness({ selects: ['clear', undefined], session: { score: 0.97, flags: [{ source: 'read', score: 0.97 }], unscanned: false } });
   await openSettings({ ...flagged, sessionID: 'ses_1' });
   assert.deepEqual(flagged.calls.find(([path]) => path === 'clear'), ['clear', { session: 'ses_1' }]);
+});
+
+test('flagged content can be trusted, and the trust list can be emptied', async () => {
+  const flagged = harness({ selects: ['trust', undefined], session: { score: 0.97, flags: [{ source: 'read', score: 0.97 }], unscanned: false } });
+  await openSettings({ ...flagged, sessionID: 'ses_1' });
+  assert.deepEqual(flagged.calls.find(([path]) => path === 'trust'), ['trust', { session: 'ses_1' }]);
+  assert.match(flagged.toasts.at(-1).message, /1 flagged output is trusted/);
+  assert.ok(!flagged.seen[0].options.some((option) => option.value === 'forget'));
+
+  const clean = harness({ selects: [undefined], session: { score: 0, flags: [], unscanned: false } });
+  await openSettings({ ...clean, sessionID: 'ses_1' });
+  assert.equal(clean.seen[0].options.find((option) => option.value === 'trust').disabled, true);
+
+  const holding = harness({ selects: ['forget', undefined], config: { ...DEFAULTS, trusted: 3 } });
+  await openSettings(holding);
+  assert.equal(holding.seen[0].options.find((option) => option.value === 'forget').title, 'Forget trusted content (3)');
+  assert.deepEqual(holding.calls.find(([path]) => path === 'trust/reset'), ['trust/reset', {}]);
+});
+
+test('an unloaded classifier is shown as a status line', async () => {
+  const h = harness({ selects: [undefined], statuses: [{ state: 'idle' }] });
+  await openSettings(h);
+  assert.match(h.seen[0].options[1].title, /unloaded and loads again on the next scan/);
 });
 
 test('a download opens the progress view, then the list once it is done', async () => {

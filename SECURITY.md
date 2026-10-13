@@ -27,6 +27,7 @@ Examples of issues that should be reported:
 - tool output changing or resetting the session score without the model taking an action, for example by making the daemon skip a scan
 - an adapter approving an action when the daemon answered `ask`, or overriding a `deny` from the harness
 - a web page or another origin reaching the daemon's HTTP endpoints from a browser
+- a classifier file being accepted although its checksum does not match the one in `daemon/models.mjs`
 
 ## What does not
 
@@ -35,4 +36,4 @@ The following are known properties of the tool, described in the [README](README
 - the classifier missing an injection, or flagging harmless text
 - a model following an injection and taking actions that are rated `low`, or that the user then approves
 - actions rated `medium` or `high` being approved in a session where nothing was flagged
-- other software running under the same user account calling the local daemon, including to clear a session's flags or change its settings
+- other software running under the same user account calling the local daemon, including to clear a session's flags, mark content as trusted or change its settings

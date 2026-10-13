@@ -1,9 +1,9 @@
 import { reminder, warning, withheldNote } from "../shared/notices.js"
+import { MIN_SCAN_CHARS, quoted } from "../shared/scan.js"
 import { describe, toRequest } from "./request.js"
 import { openSettings, statusText } from "./settings.js"
 
 const SKIP_SCAN = new Set(["edit", "write"])
-const MIN_SCAN_CHARS = 80
 const STATUS_KEY = "universal-auto-mode"
 const CONTINUE = "Continue and warn the agent"
 const STOP = "Stop the agent"
@@ -36,7 +36,7 @@ export function createExtension({ call, callOrStart, start }) {
     const review = (ctx, session, tool, scan) => {
       const run = asking.then(async () => {
         if (!answers.has(session)) {
-          const choice = await ctx.ui.select(`Auto mode flagged the output of ${tool} as a prompt injection (score ${scan.score.toFixed(2)}).`, [CONTINUE, STOP])
+          const choice = await ctx.ui.select(`Auto mode flagged the output of ${tool} as a prompt injection (score ${scan.score.toFixed(2)}).${quoted(scan.excerpt)}`, [CONTINUE, STOP])
           answers.set(session, choice === CONTINUE ? "continue" : "stop")
         }
         const decision = answers.get(session)
@@ -73,6 +73,7 @@ export function createExtension({ call, callOrStart, start }) {
       const scan = await callOrStart("scan", { session, source: event.toolName, text, ui: ctx.hasUI })
       if (!scan || scan.disabled) return
       if (scan.pending) return notify(ctx, `Auto mode is still scanning the output of ${event.toolName}. It reached the agent unscanned.`, "warning")
+      if (scan.truncated) notify(ctx, `Auto mode: the output of ${event.toolName} was too long to scan in full. Only its beginning and end were scanned.`, "warning")
       if (scan.level === "none") return
       const asked = scan.decision === undefined && scan.review !== undefined
       const decision = asked ? await review(ctx, session, event.toolName, scan) : scan.decision
@@ -82,7 +83,7 @@ export function createExtension({ call, callOrStart, start }) {
         ctx.abort()
         return { content: [note(withheldNote(scan.score))], isError: true }
       }
-      if (!scan.quiet && (asked || scan.decision === undefined)) notify(ctx, `${flagged} The agent was warned and keeps working.`, "warning")
+      if (!scan.quiet && (asked || scan.decision === undefined)) notify(ctx, `${flagged} The agent was warned and keeps working.${quoted(scan.excerpt)}`, "warning")
       return { content: [note(warning(scan.score)), ...event.content, note(reminder)], structuredContent: event.structuredContent }
     })
 

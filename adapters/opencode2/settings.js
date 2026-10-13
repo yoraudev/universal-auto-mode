@@ -36,7 +36,19 @@ function sessionOptions(session) {
       description: session.flags.length ? `Marks as false alarms: ${flagged}` : "Nothing has been flagged in this session",
       disabled: session.score === 0 && !session.unscanned,
     },
+    {
+      value: "trust",
+      title: "Trust flagged content",
+      category: "This session",
+      description: session.flags.length ? `Clears the flags and never flags this exact content again: ${flagged}` : "Nothing has been flagged in this session",
+      disabled: session.flags.length === 0,
+    },
   ]
+}
+
+function trustOptions(config) {
+  if (!config.trusted) return []
+  return [{ value: "forget", title: `Forget trusted content (${config.trusted})`, category: "Detection", description: "Content you marked as trusted is scanned and flagged again" }]
 }
 
 async function pick(key, config, dialog) {
@@ -90,6 +102,7 @@ export async function openSettings({ dialog, toast, call, start, watch, sessionI
         description: item.description,
       })),
       ...Object.entries(NUMBERS).map(([key, item]) => ({ value: key, title: `${item.title}: ${config[key]}`, category: item.category, description: item.description })),
+      ...trustOptions(config),
     ]
 
     const selection = dialog.select({ title: "Auto mode", placeholder: "Search settings", options })
@@ -111,6 +124,19 @@ export async function openSettings({ dialog, toast, call, start, watch, sessionI
     if (key === "clear") {
       await call("clear", { session: sessionID })
       say("success", "Flags cleared for this session.")
+      continue
+    }
+
+    if (key === "trust") {
+      const result = await call("trust", { session: sessionID }).catch(() => undefined)
+      if (result) say("success", `Flags cleared. ${result.added} flagged ${result.added === 1 ? "output is" : "outputs are"} trusted from now on.`)
+      else say("error", "The daemon did not answer.")
+      continue
+    }
+
+    if (key === "forget") {
+      await call("trust/reset", {}).catch(() => undefined)
+      say("success", "Trusted content forgotten.")
       continue
     }
 

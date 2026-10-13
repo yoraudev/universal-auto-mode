@@ -39,6 +39,15 @@ export const CHOICES = {
       { value: "off", title: "off", description: "No notice for flags. The agent is still warned, and questions still appear" },
     ],
   },
+  unscanned: {
+    title: "Unscanned output",
+    category: "Detection",
+    description: "Ask mode: what happens after an output that could not be scanned in full",
+    options: [
+      { value: "allow", title: "allow", description: "Default. You get a notice and nothing else changes" },
+      { value: "ask", title: "ask", description: "High-risk actions are sent to you until you clear the session's flags" },
+    ],
+  },
 }
 
 export const NUMBERS = {
@@ -48,7 +57,8 @@ export const NUMBERS = {
   overlap: { title: "Overlap", category: "Scanning", description: "Tokens shared by neighboring windows", help: "Tokens shared by neighboring windows, so an injection on a window border is not cut in half." },
   scanBudgetMs: { title: "Scan budget", category: "Scanning", description: "Milliseconds a scan may hold up a tool result", help: "Milliseconds a tool result may wait for its scan. A scan that takes longer continues in the background, and its output reaches the agent without a warning." },
   decideWaitMs: { title: "Decision wait", category: "Scanning", description: "Ask mode: milliseconds to wait for running scans", help: "Only used in ask mode. Milliseconds a permission decision waits for scans that are still running." },
-  maxChars: { title: "Scan limit", category: "Scanning", description: "Longest tool output, in characters, scanned in full", help: "Longest tool output, in characters, that is scanned in full. The rest of a longer output is not scanned." },
+  maxChars: { title: "Scan limit", category: "Scanning", description: "Longest tool output, in characters, scanned in full", help: "Longest tool output, in characters, that is scanned in full. Of a longer output, the first and the last half of this many characters are scanned and the middle is not." },
+  unloadMinutes: { title: "Unload after", category: "Classifier", description: "Idle minutes before the classifier leaves memory (0 for never)", help: "Minutes without a scan after which the classifier is unloaded to free memory. It is loaded again by the next scan, which then takes a few seconds longer. 0 keeps it loaded." },
 }
 
 export const RELOADS = new Set(["model", "device", "window", "overlap", "maxChars"])
@@ -60,5 +70,6 @@ export function statusLine(status) {
   if (status?.state === "downloading") return `Downloading ${status.model}: ${status.percent ?? "?"}% (${megabytes(status.received)} of ${megabytes(status.total)} MB)`
   if (status?.state === "loading") return `Loading ${status.model}…`
   if (status?.state === "error") return "The classifier could not be loaded"
+  if (status?.state === "idle") return "The classifier is unloaded and loads again on the next scan"
   return "The classifier is ready"
 }

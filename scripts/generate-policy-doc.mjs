@@ -1,12 +1,13 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULTS } from '../daemon/config.mjs';
-import { CRITICAL, HIGH, READ_ONLY, READ_ONLY_GIT } from '../daemon/risk.mjs';
+import { CREDENTIAL_NAMES, CRITICAL, HIGH, READ_ONLY, READ_ONLY_GIT, UNSAFE_FLAGS } from '../daemon/risk.mjs';
 
 const root = join(import.meta.dirname, '..');
 const cell = (text) => String(text).replace(/\|/g, '\\|');
 const rules = (list) => ['| Reason | Pattern |', '| --- | --- |', ...list.map(([pattern, reason]) => `| ${cell(reason)} | \`${cell(pattern.source)}\` |`)];
 const names = (set) => [...set].map((name) => `\`${name}\``).join(', ');
+const unsafe = Object.entries(UNSAFE_FLAGS).map(([name, pattern]) => `\`${name}\` with \`${cell(pattern.source)}\``).join(', ');
 
 const lines = [
   '# Policy',
@@ -28,11 +29,15 @@ const lines = [
   '',
   '## Shell commands',
   '',
-  'Rules are checked in the order below; the first match decides.',
+  'Rules are checked in the order below; the first match decides. Every pattern is tried on the command as written and on a copy without quotes, backticks, carets and backslashes, so `.e""nv` is read as `.env`.',
   '',
   '### Critical',
   '',
   ...rules(CRITICAL),
+  '',
+  `A wildcard that could expand to a credential file is critical as well. A path segment with \`*\`, \`?\`, \`[]\` or \`{}\` and at least two other characters is matched against ${names(CREDENTIAL_NAMES)}.`,
+  '',
+  'A command that is not read-only and names the harness configuration (`opencode.json`, `opencode.jsonc`, `.opencode/`, `.pi/` or `.config/opencode/`) is critical.',
   '',
   'A recursive or forced `rm` whose target is `/`, `~`, `..`, `.` or `*` is also critical.',
   '',
@@ -40,17 +45,17 @@ const lines = [
   '',
   ...rules(HIGH),
   '',
-  'A command is also high when one of its arguments is a path outside the project: `~`, a `..` segment, or an absolute path that does not resolve inside the working directory.',
+  'A command is also high when one of its arguments is a path outside the project: `~`, a `..` segment, an absolute path that does not resolve inside the working directory, a home or temporary directory variable such as `$HOME`, `$TMPDIR`, `%USERPROFILE%` or `$env:APPDATA`, or a path that starts with any other variable except `$PWD`.',
   '',
   '### Low',
   '',
-  'A command is low when it has no output redirection and every segment between `&&`, `||`, `;` and `|` is read-only:',
+  'A command is low when it has no output redirection, no command or process substitution (`$(…)`, backticks, `<(…)`) and every segment between `&&`, `||`, `;`, `|` and `&` is read-only:',
   '',
-  `- one of ${names(READ_ONLY)}`,
-  `- \`git\` followed by one of ${names(READ_ONLY_GIT)}`,
-  '- `find` without `-exec`, `-ok` or `-delete`',
-  '- `sed -n` without `-i`',
-  '- any program called with only `--version`, `-v`, `-V` or `--help`',
+  `- one of ${names(READ_ONLY)}, unless it carries a flag that writes a file or runs a program (${unsafe}), or \`uniq\` names an output file`,
+  `- \`git\` followed by one of ${names(READ_ONLY_GIT)}, where \`branch\` may only carry listing flags`,
+  '- `find` without `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint` or `-fls`',
+  "- `sed -n` with a plain line range to print, such as `sed -n '1,20p'`",
+  '- any program called with only `--version`, `-V` or `--help`',
   '',
   '### Medium',
   '',
@@ -61,7 +66,10 @@ const lines = [
   '| Request | Tier |',
   '| --- | --- |',
   '| Any path matching the credential pattern (the first critical rule above) | `critical` |',
+  '| Any path with a wildcard that could expand to a credential file | `critical` |',
   '| Writing under `.git/` or `.github/workflows/` | `critical` |',
+  '| Writing a shell startup file, `.gitconfig`, a git or Husky hook, or an autostart location | `critical` |',
+  '| Writing the harness configuration, the auto mode settings or cache, or the directory auto mode is installed in | `critical` |',
   '| Writing outside the project | `high` |',
   '| Writing inside the project | `medium` |',
   '| Reading outside the project | `medium` |',

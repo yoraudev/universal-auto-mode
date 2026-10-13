@@ -1,3 +1,5 @@
+import { quoted } from "../shared/scan.js"
+
 const TITLE = "Auto mode"
 const NOTICE_MS = 12000
 
@@ -6,9 +8,9 @@ const ASK_SIZE = { size: "xlarge" }
 
 function question(reviews) {
   const late = reviews.some((review) => review.late) ? " The agent already has it." : ""
-  if (reviews.length === 1) return `Possible prompt injection: ${describe(reviews[0])}.${late}`
-  const highest = Math.max(...reviews.map((review) => review.score))
-  return `Possible prompt injection in ${reviews.length} outputs (score ${highest.toFixed(2)}): ${reviews.map((review) => review.source).join(", ")}.${late}`
+  const highest = reviews.reduce((top, review) => (review.score > top.score ? review : top))
+  if (reviews.length === 1) return `Possible prompt injection: ${describe(reviews[0])}.${late}${quoted(highest.excerpt)}`
+  return `Possible prompt injection in ${reviews.length} outputs (score ${highest.score.toFixed(2)}): ${reviews.map((review) => review.source).join(", ")}.${late}${quoted(highest.excerpt)}`
 }
 
 export function createReviewer({ dialog, toast, call, sessions, interrupt }) {
@@ -45,13 +47,13 @@ export function createReviewer({ dialog, toast, call, sessions, interrupt }) {
     for (const notice of state.notices) {
       if (notice.review || notice.covered) continue
       if (notice.unscanned) {
-        toast.show({ variant: "warning", title: TITLE, message: notice.unscanned === "truncated" ? `The output of ${notice.source} was too long to scan in full.` : `The output of ${notice.source} could not be scanned.`, duration: NOTICE_MS, sessionID: notice.session })
+        toast.show({ variant: "warning", title: TITLE, message: notice.unscanned === "truncated" ? `The output of ${notice.source} was too long to scan in full. Only its beginning and end were scanned.` : `The output of ${notice.source} could not be scanned.`, duration: NOTICE_MS, sessionID: notice.session })
         continue
       }
       toast.show({
         variant: "warning",
         title: TITLE,
-        message: `Flagged the output of ${describe(notice)} as a ${notice.level === "strong" ? "likely" : "possible"} prompt injection. The agent was warned.`,
+        message: `Flagged the output of ${describe(notice)} as a ${notice.level === "strong" ? "likely" : "possible"} prompt injection. The agent was warned.${quoted(notice.excerpt)}`,
         duration: NOTICE_MS,
         sessionID: notice.session,
       })

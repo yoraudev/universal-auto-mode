@@ -1,10 +1,10 @@
 import { Plugin } from "@opencode/plugin"
 import { createClient } from "../shared/client.js"
 import { reminder, warning, withheldNote } from "../shared/notices.js"
+import { MIN_SCAN_CHARS } from "../shared/scan.js"
 import { REASON_PREFIX, toRequest } from "./request.js"
 
 const SKIP_SCAN = new Set(["write", "edit", "patch", "todowrite", "todoread"])
-const MIN_SCAN_CHARS = 80
 
 function withheld(result, score) {
   return { ...result, output: typeof result.output === "string" ? withheldNote(score) : undefined, content: withheldNote(score) }

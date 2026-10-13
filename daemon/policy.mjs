@@ -15,5 +15,6 @@ export function decide({ risk, reason }, session, { weak, strong }) {
   if (risk === 'critical') return { effect: 'ask', reason: `${reason}; always confirmed` };
   if (risk === 'high' && score >= weak) return { effect: 'ask', reason: `${reason}; possible prompt injection earlier in this session, score ${score.toFixed(2)}${flagged}` };
   if (risk === 'medium' && score >= strong) return { effect: 'ask', reason: `${reason}; likely prompt injection earlier in this session, score ${score.toFixed(2)}${flagged}` };
+  if (risk === 'high' && session.blind) return { effect: 'ask', reason: `${reason}; output in this session could not be scanned` };
   return { effect: 'allow', reason };
 }
